@@ -1,0 +1,28 @@
+# Nextflow work directory (can be huge)
+work/
+.nextflow/
+.nextflow.log*
+
+# Results (don't commit output data)
+results/
+test_results/
+
+# Large data files
+*.fastq
+*.fastq.gz
+*.bam
+*.bai
+*.fa
+*.fasta
+*.gtf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Conda
+.conda/
