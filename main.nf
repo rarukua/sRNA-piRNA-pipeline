@@ -5,11 +5,13 @@ nextflow.enable.dsl=2
 log.info """
     ╔═══════════════════════════════════════════════╗
     ║         sRNA / piRNA Analysis Pipeline        ║
+    ║              v2.0 — Generalized               ║
     ╚═══════════════════════════════════════════════╝
     samplesheet   : ${params.samplesheet}
-    genome_dir    : ${params.genome_dir}
-    annotation    : ${params.gtf}
     aligner       : ${params.aligner}
+    bowtie1 index : ${params.bowtie1_index}
+    annotation    : ${params.gtf}
+    min_len       : ${params.min_len}
     max_len       : ${params.max_len}
     min_overlap   : ${params.min_overlap}
     mode          : ${params.mode}
@@ -23,6 +25,7 @@ include { STAR_ALIGN               } from './modules/star'
 include { BOWTIE2_ALIGN            } from './modules/bowtie2'
 include { BOWTIE1_ALIGN            } from './modules/bowtie1'
 include { FEATURECOUNTS            } from './modules/featurecounts'
+include { MERGE_COUNTS             } from './modules/merge_counts'
 include { MULTIQC                  } from './modules/multiqc'
 
 workflow {
@@ -33,7 +36,10 @@ workflow {
         .map { row -> tuple(row.sample_id, file(row.fastq)) }
         .set { reads_ch }
 
+    // ── QC on raw reads ──
     FASTQC(reads_ch)
+
+    // ── Trimming: auto-detect adapters + polyG/polyX + size selection ──
     FASTP(reads_ch)
     FASTQC_TRIMMED(FASTP.out.trimmed)
 
@@ -50,6 +56,7 @@ workflow {
 
     } else {
 
+        // ── Alignment ──
         if (params.aligner == 'star') {
             STAR_ALIGN(FASTP.out.trimmed)
             bam_ch = STAR_ALIGN.out.bam
@@ -63,8 +70,15 @@ workflow {
             error "Invalid aligner '${params.aligner}'. Choose 'star', 'bowtie2', or 'bowtie1'."
         }
 
+        // ── Quantification: filter ≥24nt + featureCounts ──
         FEATURECOUNTS(bam_ch)
 
+        // ── Merge count tables into matrices ──
+        MERGE_COUNTS(
+            FEATURECOUNTS.out.counts.map { it[1] }.collect()
+        )
+
+        // ── MultiQC: aggregate all QC ──
         qc_files_ch = FASTQC.out.zip.map { it[1] }
             .mix( FASTQC_TRIMMED.out.zip.map { it[1] } )
             .mix( FASTP.out.json )

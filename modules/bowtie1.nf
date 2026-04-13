@@ -1,10 +1,13 @@
 // modules/bowtie1.nf
 // Bowtie1 alignment — optimized for piRNA short reads
-// -v 0          : 0 mismatches (matches your STAR outFilterMismatchNmax 0)
+//
+// -v 1          : allow 1 mismatch (captures SNV-containing isoforms)
+// -a            : report ALL alignments in best stratum (no cap)
+//                 piRNAs from TEs can map to >100 loci
 // --best        : report best alignments only
 // --strata      : only report alignments in best stratum
-// -a            : report all alignments in best stratum (like STAR's 1M multimappers)
 // -S            : output SAM format
+// --chunkmbs    : memory per thread for multi-mapper resolution
 
 process BOWTIE1_ALIGN {
     tag "$sample_id"
@@ -14,27 +17,27 @@ process BOWTIE1_ALIGN {
     tuple val(sample_id), path(trimmed_reads)
 
     output:
-    tuple val(sample_id), path("${sample_id}.bam"), emit: bam
-    path("${sample_id}.bowtie1.log"),               emit: log
+    tuple val(sample_id), path("${sample_id}.sorted.bam"),     emit: bam
+    tuple val(sample_id), path("${sample_id}.sorted.bam.bai"), emit: bai
+    path("${sample_id}.bowtie1.log"),                          emit: log
+    path("${sample_id}.flagstat"),                             emit: flagstat
 
     script:
     """
-    # Decompress first since bowtie1 doesn't support zcat pipe natively
-    gunzip -c ${trimmed_reads} > ${sample_id}.fastp.fastq
+    bowtie \\
+        -v ${params.bowtie1_mismatch} \\
+        -a \\
+        --best \\
+        --strata \\
+        --sam \\
+        -p ${task.cpus} \\
+        --chunkmbs 512 \\
+        -x ${params.bowtie1_index} \\
+        <(zcat ${trimmed_reads}) \\
+        2> ${sample_id}.bowtie1.log \\
+    | samtools sort -@ ${task.cpus} -o ${sample_id}.sorted.bam -
 
-    bowtie \
-        -p ${task.cpus} \
-        -v 0 \
-        --best \
-        --strata \
-        -a \
-        -x ${params.bowtie1_index} \
-        ${sample_id}.fastp.fastq \
-        -S ${sample_id}.sam \
-        2> ${sample_id}.bowtie1.log
-
-    # Convert SAM to BAM and clean up
-    samtools view -bS ${sample_id}.sam | samtools sort -o ${sample_id}.bam
-    rm ${sample_id}.sam ${sample_id}.fastp.fastq
+    samtools index -@ ${task.cpus} ${sample_id}.sorted.bam
+    samtools flagstat ${sample_id}.sorted.bam > ${sample_id}.flagstat
     """
 }

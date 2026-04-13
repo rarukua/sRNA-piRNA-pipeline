@@ -1,7 +1,12 @@
 // modules/fastp.nf
-// Fastp: adapter trimming + piRNA size selection
-// Your original: fastp -i $file -o ... --max_len1 24
-// We preserve all your original params and expose them via nextflow.config
+// Fastp: generalized adapter trimming for multi-dataset piRNA analysis
+//
+// Key design: NO hardcoded adapter sequence
+//   - fastp auto-detects adapters from all Illumina kits
+//     (TruSeq, DpnII, NEBNext, SMARTer, etc.)
+//   - --trim_poly_g handles NextSeq/NovaSeq 2-color artifacts (no-op on HiSeq)
+//   - --trim_poly_x handles polyA tailing from library prep (no-op if absent)
+//   - Length filter standardizes output across all read lengths (50-150bp input)
 
 process FASTP {
     tag "$sample_id"
@@ -21,14 +26,17 @@ process FASTP {
     fastp \\
         -i ${reads} \\
         -o ${sample_id}.fastp.fastq.gz \\
-        --max_len1 ${params.max_len} \\
+        --trim_poly_g \\
+        --poly_g_min_len ${params.poly_g_min_len} \\
+        --trim_poly_x \\
+        --poly_x_min_len ${params.poly_x_min_len} \\
+        --length_required ${params.min_len} \\
+        --length_limit ${params.max_len} \\
+        --qualified_quality_phred ${params.quality_phred} \\
+        --low_complexity_filter \\
+        --complexity_threshold 30 \\
         --thread ${task.cpus} \\
         --html ${sample_id}.fastp.html \\
         --json ${sample_id}.fastp.json
     """
 }
-
-// NOTE on your original params:
-// --max_len1 24     → keeps only reads ≤ 24 nt (piRNA size selection)
-// No --min_len set  → add --min_len 18 in nextflow.config if you want a lower bound
-// No adapter set    → fastp auto-detects adapters (fine for most cases)
